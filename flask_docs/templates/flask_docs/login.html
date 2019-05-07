@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>API Docs</title>
+    <link rel='stylesheet prefetch' href='http://fonts.googleapis.com/css?family=Open+Sans'>
+    <link rel="stylesheet" href="{{ url_for('flask_docs.static', filename='css/login.css') }}">
+    <link rel="shortcut icon" href="{{ url_for('flask_docs.static', filename='images/favicon.png') }}">
+</head>
+
+<body>
+<p class="tip" style="color:#3498db">{{ error }}</p>
+<div class="cont">
+    <form action="/flask_docs/login" method="post" class="form sign-in">
+        <h2>API 文档管理后台</h2>
+        <label>
+            <span>用户名</span>
+            <input type="text" id="username" name="username"/>
+        </label>
+        <label>
+            <span>密码</span>
+            <input type="password" id="password" name="password"/>
+        </label>
+        <button type="submit" class="submit">登录</button>
+    </form>
+    <div class="sub-cont">
+        <div class="img">
+            <div class="img__text m--up">
+                <h2>Flask api docs</h2>
+                <p>快速构建Web API</p>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
