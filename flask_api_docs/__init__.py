@@ -6,10 +6,8 @@ import json
 import sys
 import six
 import re
-import random
-import string
 import inspect
-import datetime
+import os
 from importlib import import_module
 from functools import wraps
 from itertools import groupby
@@ -289,10 +287,8 @@ class Docs(object):
                  default_headers=None,
                  default_params=None,
                  secret_key=None,
-                 session_expiry_time=None,
                  username='admin',
-                 password='admin',
-                 **options):
+                 password='admin'):
         """
 
         :param app:
@@ -301,56 +297,58 @@ class Docs(object):
         :param hide_docs:
         :param default_headers:
         :param default_params:
-        :param secret_key:
-        :param session_expiry_time:
         :param username:
         :param password:
         :param options:
         """
-
         self.app = app
+        assert isinstance(app, Flask), "app must be a Flask object."
         self.install_handler = install_handler
-        if not install_handler_name:
-            install_handler_name = {}
         self.install_handler_name = install_handler_name
         self.hide_docs = hide_docs
         self.default_headers = default_headers
         self.default_params = default_params
-        self.secret_key = str(secret_key) if secret_key else self.gen_secret_key()
-        app.config["SECRET_KEY"] = self.secret_key
-        self.session_expiry_time = 7 if not session_expiry_time else session_expiry_time
-        app.config["PERMANENT_SESSION_LIFETIME"] = datetime.timedelta(days=self.session_expiry_time)
-        self.username = username
-        self.password = password
-        self.options = options
-        if install_handler:
-            for i in install_handler:
+        self.secret_key = secret_key
+        self.docs_username = username
+        self.docs_password = password
+        self.init_config()
+
+        if self.app.config["INSTALL_HANDLER"]:
+            for i in self.app.config["INSTALL_HANDLER"]:
                 import_string(i + '.__name__')
-        if not hide_docs:
-            self.add_docs_rule(app)
+        if not self.app.config["HIDE_DOCS"]:
+            self.add_docs_rule()
 
-        if isinstance(app, Flask):
-            self.sync_endpoint()
-            self.add_rule(app)
-            docs_page = Blueprint("flask_docs", __name__, static_folder='static', static_url_path='/flask_docs',
-                                  template_folder='templates')
-            app.register_blueprint(docs_page)
+        self.sync_endpoint()
+        self.add_rule()
+        self.init_docs_staticfiles()
 
-    def add_docs_rule(self, app):
-        app.add_url_rule('/flask_docs', 'flask_docs_index', self.docs_index_view, methods=['GET'])
-        app.add_url_rule('/flask_docs/login', 'flask_docs_login', self.docs_login_view, methods=['GET', 'POST'])
-        app.add_url_rule('/flask_docs/logout', 'flask_docs_logout', self.docs_logout_view, methods=['GET'])
+    def init_docs_staticfiles(self):
+        docs_page = Blueprint("flask_docs", __name__, static_folder='static', static_url_path='/flask_docs',
+                              template_folder='templates')
+        self.app.register_blueprint(docs_page)
 
-    def add_rule(self, app):
+    def init_config(self):
+        self.app.config["SECRET_KEY"] = self.secret_key or os.urandom(24)
+        self.app.config.setdefault('INSTALL_HANDLER', self.install_handler or [])
+        self.app.config.setdefault('INSTALL_HANDLER_NAME', self.install_handler_name or {})
+        self.app.config.setdefault('HIDE_DOCS', self.hide_docs)
+        self.app.config.setdefault('DOCS_USERNAME', self.docs_username)
+        self.app.config.setdefault('DOCS_PASSWORD', self.docs_password)
+        self.app.config.setdefault('DEFAULT_HEADERS', self.default_headers or [])
+        self.app.config.setdefault('DEFAULT_PARAMS', self.default_params or [])
+
+    def add_docs_rule(self):
+        self.app.add_url_rule('/flask_docs', 'flask_docs_index', self.docs_index_view, methods=['GET'])
+        self.app.add_url_rule('/flask_docs/login', 'flask_docs_login', self.docs_login_view, methods=['GET', 'POST'])
+        self.app.add_url_rule('/flask_docs/logout', 'flask_docs_logout', self.docs_logout_view, methods=['GET'])
+
+    def add_rule(self):
         for key in router._registry:
             for r in router._registry[key]:
                 class_name = r['view'].__qualname__.split('.')[0]
                 class_view = getattr(inspect.getmodule(r['view']), class_name)
-                app.add_url_rule(r['url'], r['name'], class_view.as_view(r['name']))
-
-    def gen_secret_key(self):
-        s = string.ascii_letters + string.punctuation + string.digits
-        return ''.join([random.choice(s) for _ in range(50)])
+                self.app.add_url_rule(r['url'], r['name'], class_view.as_view(r['name']))
 
     def docs_index_view(self):
         if not session.get('username'):
@@ -373,7 +371,7 @@ class Docs(object):
         if request.method == "POST":
             username = request.form.get('username')
             password = request.form.get('password')
-            if username == self.username and password == self.password:
+            if username == self.app.config['DOCS_USERNAME'] and password == self.app.config['DOCS_PASSWORD']:
                 session['username'] = username
                 return redirect('/flask_docs')
             error = '用户名或密码错误!'
@@ -389,14 +387,8 @@ class Docs(object):
             for p in param:
                 func, name, regex, params, headers, desc, display = p['view'], p['name'], p['url'], p[
                     'params'], p['headers'], p['desc'], p['display']
-                default_params = []
-                default_headers = []
-                if self.default_params:
-                    default_params = params_check(self.default_params)
-                    params.extend(params_check(self.default_params))
-                if self.default_headers:
-                    default_headers = params_check(self.default_headers)
-                    headers.extend(params_check(self.default_headers))
+                params.extend(params_check(self.app.config['DEFAULT_PARAMS']))
+                headers.extend(params_check(self.app.config['DEFAULT_HEADERS']))
                 view_name, method = func.__qualname__.split('.')
 
                 if method not in http_method_names:
@@ -413,15 +405,16 @@ class Docs(object):
                             endpoint.params[method], endpoint.headers[method] = params, headers
                             break
                     else:
-                        module = module.title()
-                        if isinstance(self.install_handler_name, dict):
-                            module = self.install_handler_name.get(module, module)
+                        if isinstance(self.app.config['INSTALL_HANDLER_NAME'], dict):
+                            module = self.app.config['INSTALL_HANDLER_NAME'].get(module, module.title())
+
                         endpoint = Endpoint(func=func, regex=regex, method=method, headers=headers, params=params,
                                             name_parent=module, desc=desc)
                         if method != "OPTIONS":
                             endpoint.methods.append("OPTIONS")
                             endpoint.params["OPTIONS"], endpoint.headers[
-                                "OPTIONS"] = default_params, default_headers
+                                "OPTIONS"] = params_check(self.app.config['DEFAULT_HEADERS']), params_check(
+                                self.app.config['DEFAULT_HEADERS'])
                         router.endpoints.append(endpoint)
 
 
