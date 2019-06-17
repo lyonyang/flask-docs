@@ -13,7 +13,7 @@ import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
 from setuptools import setup
 
-version = '0.1.1'
+version = '0.2.1'
 
 # Hack to prevent stupid TypeError: 'NoneType' object is not callable error on
 # exit of python setup.py test # in multiprocessing/util.py _exit_function when
@@ -33,6 +33,7 @@ setup(
     maintainer_email='lyon.yang@qq.com',
     description='Web API docs for Flask',
     long_description=__doc__,
+    long_description_content_type="text/markdown",
     packages=[
         'flask_api_docs'
     ],

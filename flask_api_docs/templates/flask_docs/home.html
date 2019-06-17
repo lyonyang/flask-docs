@@ -2,7 +2,7 @@
 
 {% block apps_menu %}
     <li>
-        <a href="#" style="cursor:pointer;">Markdown</a>
+        <a href="/flask_docs/markdown" style="cursor:pointer;">Markdown</a>
     </li>
     <li class="dropdown">
         <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true"
@@ -51,13 +51,20 @@
                 <div class="panel panel-default endpoint">
                     <div class="panel-heading" role="tab">
                         <div class="row">
-                            <div class="col-md-6" onclick="showPanelBody(this)">
+                            <div class="col-md-10" onclick="showPanelBody(this)">
                                 <h4 class="panel-title title" id="requestUrl"><i
                                         class="fa fa-link"></i><span>{{ end.regex }}</span>&nbsp;&nbsp;{{ end.desc }}
+
+                                    {% if end.docstring %}
+                                        &nbsp;<img src="{{ url_for('flask_docs.static', filename='images/info.png') }}"
+                                             alt="" style="width:25px;height:25px;">
+                                    {% else %}
+
+                                    {% endif %}
                                 </h4>
                             </div>
 
-                            <div class="col-md-6">
+                            <div class="col-md-2">
                                 <ul class="list-inline methods">
                                     {% for method in end.allowed_methods %}
                                         <li class="method {{ method|lower }}" data-toggle="modal"
@@ -87,15 +94,15 @@
         </div>
     {% endfor %}
 
-        <!-- 右侧悬浮导航开始 -->
-        <div class="right-summary">
-            <ul>
-                {% for key in endpoints %}
-                    <li><a href="#{{ key }}-group">{{ key }}</a></li>
-                {% endfor %}
-            </ul>
-        </div>
-        <!-- 右侧悬浮导航结束 -->
+    <!-- 右侧悬浮导航开始 -->
+    <div class="right-summary">
+        <ul>
+            {% for key in endpoints %}
+                <li><a href="#{{ key }}-group">{{ key }}</a></li>
+            {% endfor %}
+        </ul>
+    </div>
+    <!-- 右侧悬浮导航结束 -->
     {% if endpoints.items() %}
 
     {% elif not query %}

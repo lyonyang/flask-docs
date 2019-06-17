@@ -8,11 +8,16 @@ import six
 import re
 import inspect
 import os
+import requests
+import io
 from importlib import import_module
 from functools import wraps
 from itertools import groupby
 from flask.views import MethodView
-from flask import Flask, request, jsonify, render_template, session, redirect, Blueprint
+from flask import (
+    Flask, request, jsonify, render_template,
+    session, redirect, Blueprint, Markup, send_file
+)
 
 # Match the beginning of a named or unnamed group.
 named_group_matcher = re.compile(r'\(\?P(<\w+>)')
@@ -159,7 +164,7 @@ def import_string(dotted_path):
         six.reraise(ImportError, ImportError(msg), sys.exc_info()[2])
 
 
-def register_docs(url, params=None, headers=None, desc='', display=True, name=None):
+def register_docs(url, params=None, desc='', headers=None, display=True, name=None):
     if params is None:
         params = []
     if headers is None:
@@ -275,7 +280,8 @@ class Endpoint(object):
 
     def get_doc(self):
         module = inspect.getmodule(self.callback)
-        return inspect.getdoc(getattr(module, self.callback.__qualname__.split('.')[0]))
+        doc = getattr(module, self.callback.__qualname__.split('.')[0]).__doc__ or ''
+        return Markup(doc.strip('\n').strip(' ').replace('\n', '<br>').replace(' ', '&nbsp;'))
 
 
 class Docs(object):
@@ -339,16 +345,21 @@ class Docs(object):
         self.app.config.setdefault('DEFAULT_PARAMS', self.default_params or [])
 
     def add_docs_rule(self):
-        self.app.add_url_rule('/flask_docs', 'flask_docs_index', self.docs_index_view, methods=['GET'])
-        self.app.add_url_rule('/flask_docs/login', 'flask_docs_login', self.docs_login_view, methods=['GET', 'POST'])
-        self.app.add_url_rule('/flask_docs/logout', 'flask_docs_logout', self.docs_logout_view, methods=['GET'])
+        self.app.add_url_rule('/flask_docs/', 'flask_docs_index', self.docs_index_view, methods=['GET'],
+                              strict_slashes=False)
+        self.app.add_url_rule('/flask_docs/login/', 'flask_docs_login', self.docs_login_view, methods=['GET', 'POST'],
+                              strict_slashes=False)
+        self.app.add_url_rule('/flask_docs/logout/', 'flask_docs_logout', self.docs_logout_view, methods=['GET'],
+                              strict_slashes=False)
+        self.app.add_url_rule('/flask_docs/markdown/', 'flask_docs_markdown', self.docs_markdown, methods=['GET'],
+                              strict_slashes=False)
 
     def add_rule(self):
         for key in router._registry:
             for r in router._registry[key]:
                 class_name = r['view'].__qualname__.split('.')[0]
                 class_view = getattr(inspect.getmodule(r['view']), class_name)
-                self.app.add_url_rule(r['url'], r['name'], class_view.as_view(r['name']))
+                self.app.add_url_rule(r['url'], r['name'], class_view.as_view(r['name']), strict_slashes=False)
 
     def docs_index_view(self):
         if not session.get('username'):
@@ -360,7 +371,6 @@ class Docs(object):
             router_endpoints = [endpoint for endpoint in router_endpoints if query in endpoint.path]
         for key, group in groupby(router_endpoints, lambda x: x.name_parent):
             endpoints[key] = list(group)
-
         return render_template(
             'flask_docs/home.html',
             endpoints=endpoints,
@@ -382,13 +392,105 @@ class Docs(object):
             session.pop('username')
         return redirect('/flask_docs/login')
 
+    def docs_markdown(self):
+        endpoints = {}
+        for endpoint in router.endpoints:
+            if endpoint.name_parent in endpoints:
+                endpoints[endpoint.name_parent].append(endpoint)
+            else:
+                endpoints[endpoint.name_parent] = [endpoint, ]
+
+        content = ''
+        summary = ['- [API文档](#API文档)']
+        for k, v in endpoints.items():
+            if ord(k[0]) >= 97 and ord(k[0]) <= 122:
+                k = k.title
+            summary.append('\t' + '- [%s](#%s)' % (k, k))
+            content += '## %s\n\n' % k
+            for e in v:
+                param_markdown_template = "字段名 | 必填 | 类型 | 示例值 | 描述\n:-: | :-: | :-: | :-: | :-:\n"
+                for m in e.methods:
+                    if m == 'OPTIONS':
+                        continue
+                    summary.append('\t' * 2 + '- [%s](#%s)' % (e.desc, e.desc))
+                    title = "### %s\n\n~%s\n\n%s\n\n" % (e.desc, e.path, m + ' 请求方式\n\n**请求参数**:\n')
+                    if e.docstring:
+                        title = "### %s\n\n%s\n\n~%s\n\n%s\n\n" % (
+                            e.desc, e.docstring, e.path, m + ' 请求方式\n\n**请求参数**:\n')
+                    headers = [title, param_markdown_template, ]
+                    params = [param_markdown_template, ]
+                    request_headers = {}
+                    request_params = {}
+                    for h in e.headers[m]:
+                        headers.append(
+                            '%s | %s | %s | %s | %s |\n' % (
+                                h.kwargs['field_name'], h.kwargs['required'], h.kwargs['param_type'],
+                                h.kwargs['default'], h.kwargs['description']))
+                        request_headers[h.kwargs['field_name']] = h.kwargs['default']
+
+                    for p in e.params[m]:
+                        params.append(
+                            '%s | %s | %s | %s | %s |\n' % (
+                                p.kwargs['field_name'], p.kwargs['required'], p.kwargs['param_type'],
+                                p.kwargs['default'], p.kwargs['description']))
+                        request_params[h.kwargs['field_name']] = h.kwargs['default']
+
+                    if len(headers) == 2:
+                        headers = []
+                    else:
+                        headers.append('\n')
+                        headers.insert(1, 'Header\n\n')
+                        headers = ''.join(headers)
+
+                    if len(params) == 1:
+                        params = []
+                    else:
+                        params.insert(0, 'Body\n\n')
+
+                    params.append('\n')
+                    params = ''.join(params)
+                    content += headers + params
+
+                    if hasattr(requests, m.lower()):
+                        print(e.path)
+                        request_url = '{scheme}://{host}{path}'.format(
+                            scheme=request.scheme,
+                            host=request.host,
+                            path=e.path,
+                        )
+                        request_func = getattr(requests, m.lower())
+                        return_data = request_func(request_url, request_params, headers=request_headers)
+                        json_data = json.loads(return_data.text, encoding='utf-8')
+                        json_format = json.dumps(json_data, sort_keys=True, indent=4, separators=(',', ':'),
+                                                 ensure_ascii=False)
+                        content += "请求示例:\n```json\n%s\n```\n\n" % (json_format)
+
+        summary = "<!-- TOC -->\n\n" + "\n".join(summary) + "\n\n<!-- /TOC -->\n\n# API文档\n\n"
+        content = summary + content
+
+        stream = io.BytesIO(content.encode('utf-8'))
+
+        return send_file(stream,
+                         as_attachment=True,
+                         attachment_filename='api-docs.md',
+                         mimetype='application/octet-stream',
+                         )
+
+    def default_params_handler(self, params, default_params):
+        param_fields = list(map(lambda x: x['field_name'], params))
+        for p in params_check(default_params):
+            if p['field_name'] in param_fields:
+                continue
+            params.append(p)
+        return params
+
     def sync_endpoint(self):
         for module, param in router._registry.items():
             for p in param:
                 func, name, regex, params, headers, desc, display = p['view'], p['name'], p['url'], p[
                     'params'], p['headers'], p['desc'], p['display']
-                params.extend(params_check(self.app.config['DEFAULT_PARAMS']))
-                headers.extend(params_check(self.app.config['DEFAULT_HEADERS']))
+                params = self.default_params_handler(params, self.app.config['DEFAULT_PARAMS'])
+                headers = self.default_params_handler(headers, self.app.config['DEFAULT_HEADERS'])
                 view_name, method = func.__qualname__.split('.')
 
                 if method not in http_method_names:
@@ -405,15 +507,16 @@ class Docs(object):
                             endpoint.params[method], endpoint.headers[method] = params, headers
                             break
                     else:
+                        name_parent = module
                         if isinstance(self.app.config['INSTALL_HANDLER_NAME'], dict):
-                            module = self.app.config['INSTALL_HANDLER_NAME'].get(module, module.title())
+                            name_parent = self.app.config['INSTALL_HANDLER_NAME'].get(module, module.title())
 
                         endpoint = Endpoint(func=func, regex=regex, method=method, headers=headers, params=params,
-                                            name_parent=module, desc=desc)
+                                            name_parent=name_parent, desc=desc)
                         if method != "OPTIONS":
                             endpoint.methods.append("OPTIONS")
                             endpoint.params["OPTIONS"], endpoint.headers[
-                                "OPTIONS"] = params_check(self.app.config['DEFAULT_HEADERS']), params_check(
+                                "OPTIONS"] = params_check(self.app.config['DEFAULT_PARAMS']), params_check(
                                 self.app.config['DEFAULT_HEADERS'])
                         router.endpoints.append(endpoint)
 
@@ -425,9 +528,9 @@ class BaseHandler(MethodView):
             return request.args
         elif request.method == "POST" or request.method == "DELETE" or \
                         request.method == "PUT" or request.method == "PATCH":
-            return request.form
+            return request.form or request.json
         else:
-            return request.get_json()
+            return request.json
 
     @property
     def request(self):

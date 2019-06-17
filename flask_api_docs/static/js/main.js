@@ -414,6 +414,7 @@ function sendRequest(b) {
         dataType: "json",
         headers: requestHeaders,
         data: requestParams,
+        cache: false,
         processData: processDataBool,
         contentType: contentTypeBool,
         beforeSend: function () {
