@@ -18,7 +18,6 @@ from flask import (
     Flask, request, jsonify, render_template,
     session, redirect, Blueprint, Markup, send_file
 )
-from common.api_exception import ParamsError
 
 # Match the beginning of a named or unnamed group.
 named_group_matcher = re.compile(r'\(\?P(<\w+>)')
@@ -526,7 +525,7 @@ class Docs(object):
         return len(self.router.endpoints)
 
 
-class BaseHandler(MethodView):
+class View(MethodView):
     @property
     def data(self):
         if request.method == "GET" or request.method == "HEAD":
