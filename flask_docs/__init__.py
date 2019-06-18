@@ -18,6 +18,7 @@ from flask import (
     Flask, request, jsonify, render_template,
     session, redirect, Blueprint, Markup, send_file
 )
+from common.api_exception import ParamsError
 
 # Match the beginning of a named or unnamed group.
 named_group_matcher = re.compile(r'\(\?P(<\w+>)')
@@ -164,19 +165,13 @@ def import_string(dotted_path):
         six.reraise(ImportError, ImportError(msg), sys.exc_info()[2])
 
 
-def register_docs(url, params=None, desc='', headers=None, display=True, name=None):
-    if params is None:
-        params = []
-    if headers is None:
-        headers = []
-
+def register_docs(url, params=None, desc='', headers=None, **options):
     def decorator(view):
         method = view.__name__
-        endpoint = name
-        if endpoint is None:
-            endpoint = view.__qualname__
-        router.register(view=view, name=endpoint, url=url, params=params_check(params),
-                        headers=params_check(headers),
+        endpoint = options.pop('name', view.__qualname__)
+        display = options.pop('display', True)
+        router.register(view=view, name=endpoint, url=url, params=params_check(params or []),
+                        headers=params_check(headers or []),
                         desc=desc, method=method,
                         display=display)
 
@@ -317,6 +312,7 @@ class Docs(object):
         self.secret_key = secret_key
         self.docs_username = username
         self.docs_password = password
+        self.router = router
         self.init_config()
 
         if self.app.config["INSTALL_HANDLER"]:
@@ -355,8 +351,8 @@ class Docs(object):
                               strict_slashes=False)
 
     def add_rule(self):
-        for key in router._registry:
-            for r in router._registry[key]:
+        for key in self.router._registry:
+            for r in self.router._registry[key]:
                 class_name = r['view'].__qualname__.split('.')[0]
                 class_view = getattr(inspect.getmodule(r['view']), class_name)
                 self.app.add_url_rule(r['url'], r['name'], class_view.as_view(r['name']), strict_slashes=False)
@@ -365,7 +361,7 @@ class Docs(object):
         if not session.get('username'):
             return redirect('/flask_docs/login')
         endpoints = {}
-        router_endpoints = router.endpoints
+        router_endpoints = self.router.endpoints
         query = request.args.get('search', '')
         if query and router_endpoints:
             router_endpoints = [endpoint for endpoint in router_endpoints if query in endpoint.path]
@@ -394,7 +390,7 @@ class Docs(object):
 
     def docs_markdown(self):
         endpoints = {}
-        for endpoint in router.endpoints:
+        for endpoint in self.router.endpoints:
             if endpoint.name_parent in endpoints:
                 endpoints[endpoint.name_parent].append(endpoint)
             else:
@@ -452,7 +448,6 @@ class Docs(object):
                     content += headers + params
 
                     if hasattr(requests, m.lower()):
-                        print(e.path)
                         request_url = '{scheme}://{host}{path}'.format(
                             scheme=request.scheme,
                             host=request.host,
@@ -485,13 +480,18 @@ class Docs(object):
         return params
 
     def sync_endpoint(self):
-        for module, param in router._registry.items():
+        for module, param in self.router._registry.items():
             for p in param:
-                func, name, regex, params, headers, desc, display = p['view'], p['name'], p['url'], p[
-                    'params'], p['headers'], p['desc'], p['display']
+                func = p.get('view')
+                regex = p.get('url')
+                method = p.get('method')
+                params = p.get('params')
+                headers = p.get('headers')
+                desc = p.get('desc')
+                display = p.get('display')
+
                 params = self.default_params_handler(params, self.app.config['DEFAULT_PARAMS'])
                 headers = self.default_params_handler(headers, self.app.config['DEFAULT_HEADERS'])
-                view_name, method = func.__qualname__.split('.')
 
                 if method not in http_method_names:
                     # method 不合法
@@ -500,7 +500,7 @@ class Docs(object):
                 method = method.upper()
 
                 if display:
-                    for endpoint in router.endpoints:
+                    for endpoint in self.router.endpoints:
                         if endpoint.path == simplify_regex(regex):
                             endpoint.methods.append(method)
                             # 如果已经存在则进行覆盖
@@ -518,7 +518,12 @@ class Docs(object):
                             endpoint.params["OPTIONS"], endpoint.headers[
                                 "OPTIONS"] = params_check(self.app.config['DEFAULT_PARAMS']), params_check(
                                 self.app.config['DEFAULT_HEADERS'])
-                        router.endpoints.append(endpoint)
+                        self.router.endpoints.append(endpoint)
+
+    @property
+    def count(self):
+        """ API count"""
+        return len(self.router.endpoints)
 
 
 class BaseHandler(MethodView):

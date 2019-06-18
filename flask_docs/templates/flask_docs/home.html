@@ -51,20 +51,20 @@
                 <div class="panel panel-default endpoint">
                     <div class="panel-heading" role="tab">
                         <div class="row">
-                            <div class="col-md-10" onclick="showPanelBody(this)">
+                            <div class="col-md-{{ 12 - end.allowed_methods|length }}" onclick="showPanelBody(this)">
                                 <h4 class="panel-title title" id="requestUrl"><i
                                         class="fa fa-link"></i><span>{{ end.regex }}</span>&nbsp;&nbsp;{{ end.desc }}
 
                                     {% if end.docstring %}
                                         &nbsp;<img src="{{ url_for('flask_docs.static', filename='images/info.png') }}"
-                                             alt="" style="width:25px;height:25px;">
+                                                   alt="" style="width:25px;height:25px;">
                                     {% else %}
 
                                     {% endif %}
                                 </h4>
                             </div>
 
-                            <div class="col-md-2">
+                            <div class="col-md-{{ end.allowed_methods|length }}">
                                 <ul class="list-inline methods">
                                     {% for method in end.allowed_methods %}
                                         <li class="method {{ method|lower }}" data-toggle="modal"
