@@ -59,31 +59,6 @@ var formatJson = function (json, options) {
 };
 
 
-// format方法
-String.prototype.format = function (args) {
-    var result = this;
-    if (arguments.length > 0) {
-        if (arguments.length == 1 && typeof (args) == "object") {
-            for (var key in args) {
-                if (args[key] != undefined) {
-                    var reg = new RegExp("({" + key + "})", "g");
-                    result = result.replace(reg, args[key]);
-                }
-            }
-        }
-        else {
-            for (var i = 0; i < arguments.length; i++) {
-                if (arguments[i] != undefined) {
-                    var reg = new RegExp("({)" + i + "(})", "g");
-                    result = result.replace(reg, arguments[i]);
-                }
-            }
-        }
-    }
-    return result;
-};
-
-
 (function () {
     // 添加按钮
     $("#requestModal").on('show.bs.modal', modalShowBefore);
@@ -228,32 +203,9 @@ function modalShowBefore(event) {
 }
 
 
-String.prototype.format = function (args) {
-    var result = this;
-    if (arguments.length > 0) {
-        if (arguments.length == 1 && typeof (args) == "object") {
-            for (var key in args) {
-                if (args[key] != undefined) {
-                    var reg = new RegExp("({" + key + "})", "g");
-                    result = result.replace(reg, args[key]);
-                }
-            }
-        }
-        else {
-            for (var i = 0; i < arguments.length; i++) {
-                if (arguments[i] != undefined) {
-                    var reg = new RegExp("({)" + i + "(})", "g");
-                    result = result.replace(reg, arguments[i]);
-                }
-            }
-        }
-    }
-    return result;
-};
-
 // 获取Json对象
 function getJsonParams(array) {
-    var json_str = "{";
+    var json_obj = {};
     var flag = true;
     $.each(array, function (i, v) {
         var key = $(v).attr("id");
@@ -276,22 +228,13 @@ function getJsonParams(array) {
             value = $(v)[0].files[0];
             return true
         }
-        var temp_str = '"{0}":"{1}"'.format(key, value);
-        json_str += temp_str;
-        if (i == array.length - 1) {
-        } else {
-            json_str += ','
-        }
+        json_obj[key] = value.replace(/\'/g, '"');
+
     });
     if (flag == false) {
         return false
     }
-
-    if (json_str.charAt(json_str.length - 1) == ',') {
-        json_str = json_str.substr(0, json_str.length - 1)
-    }
-    json_str += "}";
-    return JSON.parse(json_str)
+    return json_obj
 }
 
 function ajaxSuccess(data, textStatus, xhr) {
@@ -414,6 +357,7 @@ function sendRequest(b) {
         dataType: "json",
         headers: requestHeaders,
         data: requestParams,
+        // traditional: true,
         cache: false,
         processData: processDataBool,
         contentType: contentTypeBool,

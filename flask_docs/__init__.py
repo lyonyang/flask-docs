@@ -527,16 +527,6 @@ class Docs(object):
 
 class View(MethodView):
     @property
-    def data(self):
-        if request.method == "GET" or request.method == "HEAD":
-            return request.args
-        elif request.method == "POST" or request.method == "DELETE" or \
-                        request.method == "PUT" or request.method == "PATCH":
-            return request.form or request.json
-        else:
-            return request.json
-
-    @property
     def request(self):
         return request
 

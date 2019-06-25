@@ -12,12 +12,14 @@ import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
 from setuptools import setup
 
-version = '1.3.1'
+version = '1.3.2'
 
 # Hack to prevent stupid TypeError: 'NoneType' object is not callable error on
 # exit of python setup.py test # in multiprocessing/util.py _exit_function when
 # running python setup.py test (see
 # https://github.com/pypa/virtualenv/pull/259)
+
+# python setup.py sdist upload
 
 install_requires = ['Flask', 'requests', 'six']
 
