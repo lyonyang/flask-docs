@@ -165,6 +165,9 @@ def import_string(dotted_path):
 
 
 def register_docs(url, params=None, desc='', headers=None, **options):
+    """
+    register API to document.
+    """
     def decorator(view):
         method = view.__name__
         endpoint = options.pop('name', view.__qualname__)
